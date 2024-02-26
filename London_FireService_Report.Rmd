@@ -1,0 +1,277 @@
+---
+title: "London Fire Service Statistical Summary"
+author: "Nithish Vengadesan"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+# Section 1
+
+This report fulfills the requests of Fire service managers and local politicians, performing the specific analysis 
+
+
+This data comes from the London Fire Brigade. A panel of Fire service managers and local politicians want to better understand some particular aspects of the costs and response times associated with incidents during the time period in the data.
+
+# Read Data
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+#Import Required Libraries
+library(tidyverse)
+library(dplyr)
+library(gridExtra)
+library(nycflights13)
+library(emmeans)
+
+options(width=100)
+set.seed(9999) # Set the random seed to make sure you get the same results
+
+#Import Data Set
+fire_data = read_csv("London_Fire_data.csv")
+summary(fire_data)
+
+
+
+```
+
+
+# Continuous Variable Visualisation
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+#check for data quality and outliers
+ggplot(fire_data) +geom_histogram(aes(`FirstPumpArriving_AttendanceTime`))
+# The data is continutious and only few outliers or null value is present in few response which can be replaced with zero or removed.
+```
+
+
+# Analysis of Cost on different Incidents
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+cost_data <- fire_data%>% 
+  group_by(IncidentGroup)%>% 
+  summarise(total_cost = sum(`Notional Cost (£)`, na.rm = TRUE), mean_cost = mean(`Notional Cost (£)`, na.rm = TRUE), Number_of_Alarms=n())
+
+print(cost_data)
+
+```
+
+# Distribution of Response time
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+fire_data <- mutate(fire_data, response_time =FirstPumpArriving_AttendanceTime ) %>%filter(!is.na(response_time))
+
+mean_time_incidentgroup  <- fire_data %>% group_by(IncidentGroup) %>% summarise(mean=mean(response_time,na.rm=T ),Frequency=n())
+
+overall_meantime = mean(fire_data$FirstPumpArriving_AttendanceTime)
+print(overall_meantime)
+
+print(mean_time_incidentgroup)
+
+ggplot(data = fire_data, aes(FirstPumpArriving_AttendanceTime)) +
+geom_histogram(binwidth = 1, na.rm = TRUE , color = "orange") + geom_vline(xintercept = mean(fire_data$FirstPumpArriving_AttendanceTime, na.rm = T), color="black")+
+  labs(x = "Distribution of Response Time ", y = "Frequency",title=" Distribution of Overall Mean Response Time")
+```
+
+# Visualisation of Response time with respect to Incident Groups
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+
+ggplot(data = fire_data, aes(FirstPumpArriving_AttendanceTime, color = IncidentGroup)) +
+geom_histogram(binwidth = 1, na.rm = TRUE ) +
+geom_vline(xintercept = mean(fire_data$FirstPumpArriving_AttendanceTime, na.rm = T), color="black")+
+facet_grid(IncidentGroup~.) +
+  xlim(0,700)+
+labs(x = "Distribution of Response Time ", y = "Frequency of Incidents", title = "Mean Response Time for Different Incidents")
+
+```
+
+# Summary Table of special service response times
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+spl_services <- fire_data[!is.na(fire_data$SpecialServiceType),]
+
+spl_services<-spl_services %>% 
+  filter(IncidentGroup=="Special Service")%>%
+  group_by(SpecialServiceType) %>%
+  summarise(Frequency = n (), Mean_Response_Time = mean(FirstPumpArriving_AttendanceTime, na.rm = TRUE), Quantile10 = quantile(FirstPumpArriving_AttendanceTime, 0.10, na.rm = TRUE), Quantile90 = quantile(FirstPumpArriving_AttendanceTime, 0.90,na.rm = TRUE))
+
+print(spl_services)
+```
+
+# Summary table of total responses
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+(fire_data.summary <- fire_data %>% summarise(mean_time=mean(response_time, na.rm=TRUE), sd_time=sd(response_time, na.rm=TRUE), N_time=n())) 
+```
+
+# Filtering out responses of Ealing and Greenwich
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+fire_data.E.G <- fire_data %>% filter(IncGeo_BoroughName %in% c("EALING", "GREENWICH"), na.rm=TRUE)                                                       #filtering Ealing and greenwich
+
+fire_data.E.G.summarise<-fire_data.E.G  %>% group_by(IncGeo_BoroughName) %>% summarise(Mean=mean(response_time , na.rm=TRUE), Freqquency = n()) #summary table for Ealing and Greenwich
+
+print(fire_data.E.G.summarise)
+```
+
+
+# Overall Response time graph
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(fire_data.E.G, aes(x=response_time)) + 
+    geom_histogram(aes(y=..density..), binwidth=2) +
+    stat_function(fun=function(x) {dnorm(x, mean=fire_data.summary$mean_time, sd=fire_data.summary$sd_time)}, col="red") + geom_vline(data=fire_data.summary, mapping=aes(xintercept=fire_data.summary$mean_time), col="white") +
+    labs(x="Response Time", y="Density", title="Distribution of Overall Response Time Graph")
+```
+
+# Distribution of Response Time from Eagline and Greenwich
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(fire_data.E.G, aes(response_time,..density.., fill=IncGeo_BoroughName)) + geom_histogram(binwidth=2,position="identity", alpha=.5) + labs(x="Response Time", y="Density", fill="IncGeo_BoroughName", title="Distribution of Response Time from Eagline and Greenwich") + geom_vline(data=fire_data.E.G.summarise, mapping=aes(xintercept=fire_data.E.G.summarise$Mean), col="white")
+```
+
+# Performing Two Sample T-Test
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+t_test<-t.test(
+    response_time~IncGeo_BoroughName,
+    data=fire_data.E.G
+)
+
+print(t_test)
+```
+
+# Estimation 
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+m.rt.by.IncGeo_BoroughName <- lm(response_time~IncGeo_BoroughName, data=fire_data.E.G)
+(  m.rt.by.IncGeo_BoroughName.emm <- emmeans(m.rt.by.IncGeo_BoroughName, ~IncGeo_BoroughName)  )
+```
+```{r}
+(  m.rt.by.IncGeo_BoroughName.contrast <- confint(pairs(m.rt.by.IncGeo_BoroughName.emm))  )
+```
+
+# Side-by-side plots CIs for the estimates for each group as well as the CI for the difference between groups
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+grid.arrange(
+    ggplot(summary(m.rt.by.IncGeo_BoroughName.emm), aes(x=IncGeo_BoroughName, y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="Response Time", x="Borough Name", subtitle="Error bars are 95% CIs", title="Mean Response TIme") + ylim(305,325), 
+    ggplot(m.rt.by.IncGeo_BoroughName.contrast, aes(x=contrast, y=estimate, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="Difference in Response Time", x="Contrast", subtitle="Error bars are 95% CIs", title="Difference in Response Time") + ylim(-1,10) +
+        geom_hline(yintercept=0, lty=2),
+    ncol=2
+)
+```
+
+---
+
+# Section 2
+
+This report presents the results of the analyses requested by the board.This used the data provided is London_Fire_data with almost 322375 incidents and 39 different variables. There was a small amount of missing data or inaccurate data entry the data was being replaced by zero or removed.
+
+# 1) The costs of responding to fires and false alarms:
+
+Total cost associated with all indecents including Fires, False and Speacial Services : 151121790GBP \
+Total Cost associated with actual Fires : 43059576 GBP \
+Total Cost associated with False Alarms : 61249812 GBP \
+\
+Average cost spent on actual Fires : 837.9795 GBP \
+Average Cost Spent on False Alarms : 378.3796 GBP \
+\
+Cost spent on False Fire Alarm is high as we get a lot of False Alarms counting to 162299\
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+cost_data
+```
+
+
+# 2) The distribution of response times
+
+Overall Response time of all indecents including Fires, False and Speacial Services : 308.0578 sec \
+The Mean Response time for actual Fires : 319.4506 seconds \
+The Mean Response time for False Alarm : 298.9196 seconds \
+The Mean Response time for Special Services : 317.8027 seconds \
+\
+The Graph depicts the Distribution of Response time for different Incidents and the black line indicates the mean value of overall Response time.\
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = fire_data, aes(FirstPumpArriving_AttendanceTime)) +
+geom_histogram(binwidth = 1, na.rm = TRUE , color = "orange") + geom_vline(xintercept = mean(fire_data$FirstPumpArriving_AttendanceTime, na.rm = T), color="black")+
+  labs(x = "Distribution of Response Time ", y = "Frequency",title="Overall Mean Response Time")
+
+ggplot(data = fire_data, aes(FirstPumpArriving_AttendanceTime, color = IncidentGroup)) +
+geom_histogram(binwidth = 1, na.rm = TRUE ) +
+geom_vline(xintercept = mean(fire_data$FirstPumpArriving_AttendanceTime, na.rm = T), color="black")+
+facet_grid(IncidentGroup~.) +
+  xlim(0,700)+
+labs(x = "Distribution of Response Time ", y = "Frequency of Incidents", title = "Mean Response Time for Different Incidents")
+
+
+print(mean_time_incidentgroup)
+```
+
+
+Inference from Average Response time:\
+
+Avg Response time of Fires > Avg Response time of Special Services > Avg Response time of False Alarm\
+\
+The Response time for Fires and Special Services does not vary much than that to False Alarm\
+\
+
+# 3) Summary of special service response times
+
+The count,mean response time ,10th percentile and 90th percentile for each type of incidents is summarized in table below for Special Services:
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+spl_services
+```
+
+
+Conclusions  drawn from the table : \
+1. Effective entry/exit has the highest frequency of 23300.\
+2.Split and Leaks(not RTC)has the highest mean response time 350.3152 seconds and 50th percentile response time 530.0 \
+3.Water Provision has the highest 10th percentile response time with 245.0 seconds\
+
+
+# 4) A t-test comparing Ealing and Greenwich
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(fire_data.E.G, aes(x=response_time)) + 
+    geom_histogram(aes(y=..density..), binwidth=2) +
+    stat_function(fun=function(x) {dnorm(x, mean=fire_data.summary$mean_time, sd=fire_data.summary$sd_time)}, col="red") + geom_vline(data=fire_data.summary, mapping=aes(xintercept=fire_data.summary$mean_time), col="white") +
+    labs(x="Response Time", y="Density", title="Distribution of overall Response Time")
+
+ggplot(fire_data.E.G, aes(response_time,..density.., fill=IncGeo_BoroughName)) + geom_histogram(binwidth=2,position="identity", alpha=.5) + labs(x="Response Time", y="Density", fill="IncGeo_BoroughName", title="Distribution of Response Time from Eagline and Greenwich") + geom_vline(data=fire_data.E.G.summarise, mapping=aes(xintercept=fire_data.E.G.summarise$Mean), col="white")
+
+
+print(t_test)
+```
+The Two Sample t-test analysis shows that the Ealing’s mean response time of 316.93 seconds is significantly higher than the Greenwhich average response time 311.38 Seconds ,  welch t(19303) = 2.85, p=0.00432 with a difference of 5.55 seconds
+
+# Estimation:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+m.rt.by.IncGeo_BoroughName <- lm(response_time~IncGeo_BoroughName, data=fire_data.E.G)
+(  m.rt.by.IncGeo_BoroughName.emm <- emmeans(m.rt.by.IncGeo_BoroughName, ~IncGeo_BoroughName)  )
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+(  m.rt.by.IncGeo_BoroughName.contrast <- confint(pairs(m.rt.by.IncGeo_BoroughName.emm))  )
+```
+The mean response time for Ealing is 317 seconds 95% CI [314–320]. The mean response time for Greenwich is 311 seconds 95% CI [309–314]. The gain is 5.55 seconds 95% CI [1.73–9.38] smaller at Greenwich compared to Ealing.\
+\
+Below image well describes the CI:\
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+grid.arrange(
+    ggplot(summary(m.rt.by.IncGeo_BoroughName.emm), aes(x=IncGeo_BoroughName, y=emmean, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="Response Time", x="Borough Name", subtitle="Error bars are 95% CIs", title="Mean Response TIme") + ylim(305,325), 
+    ggplot(m.rt.by.IncGeo_BoroughName.contrast, aes(x=contrast, y=estimate, ymin=lower.CL, ymax=upper.CL)) + 
+        geom_point() + geom_linerange() + 
+        labs(y="Difference in Response Time", x="Contrast", subtitle="Error bars are 95% CIs", title="Difference in Response Time") + ylim(-1,10) +
+        geom_hline(yintercept=0, lty=2),
+    ncol=2
+)
+
+```
+
+
+
+
+
+
+
+
+---
