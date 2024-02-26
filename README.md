@@ -1,11 +1,11 @@
 # London-Fire-Service-Report
 The London Fire Brigade has requested a comprehensive report to analyze various aspects of incident response costs and times.
 
-The Scenario
+## The Scenario
 This data comes from the London Fire Brigade. A panel of Fire service managers and local politicians want to better understand some particular aspects of the costs and response times associated with incidents during the time period in the data.They have asked that you provide a report containing specific outputs and answering their 
 specific questions.
 
-The Request
+## The Request
 The company have requested the following:
 The costs of responding to fires and false alarms.
 The panel would like to know the sum of all costs associated with responding to fires during the time period, and (separately) the sum of all costs associated with responding to false alarms. 
